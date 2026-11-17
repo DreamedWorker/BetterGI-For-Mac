@@ -1,0 +1,13 @@
+.DS_Store
+
+/dist/
+**/bin/
+**/obj/
+*.log
+/native/BgiMacNative/build/
+
+.vs/
+.idea/
+*.user
+*.suo
+*.swp

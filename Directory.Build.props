@@ -1,0 +1,12 @@
+<Project>
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <!-- CA1416: Vanara's Win32 *type definitions* (RECT, VK) are reused on macOS on purpose; no Win32 function is called. -->
+    <NoWarn>$(NoWarn);CA1416</NoWarn>
+    <UpstreamRoot>$(MSBuildThisFileDirectory)upstream/</UpstreamRoot>
+    <OpenCvSharpVersion>4.13.0.20261107</OpenCvSharpVersion>
+  </PropertyGroup>
+</Project>

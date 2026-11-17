@@ -1,0 +1,103 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="using:BetterGI.Mac"
+             xmlns:platform="using:BetterGI.Mac.Platform"
+             x:Class="BetterGI.Mac.Pages.HomePage"
+             x:DataType="local:MainViewModel">
+    <Grid ColumnDefinitions="400,*">
+        <!-- left: setup -->
+        <ScrollViewer Grid.Column="0" Margin="0,0,12,0">
+            <StackPanel>
+
+                <Border Classes="card">
+                    <StackPanel Spacing="6">
+                        <TextBlock Classes="h" Text="1 · Permissions" />
+                        <Grid ColumnDefinitions="*,Auto">
+                            <TextBlock Text="{Binding ScreenCaptureText}" VerticalAlignment="Center" TextWrapping="Wrap" />
+                            <Button Grid.Column="1" Content="Grant…" Command="{Binding RequestScreenCaptureCommand}"
+                                    IsVisible="{Binding !ScreenCaptureGranted}" />
+                        </Grid>
+                        <Grid ColumnDefinitions="*,Auto">
+                            <TextBlock Text="{Binding AccessibilityText}" VerticalAlignment="Center" TextWrapping="Wrap" />
+                            <Button Grid.Column="1" Content="Grant…" Command="{Binding RequestAccessibilityCommand}"
+                                    IsVisible="{Binding !AccessibilityGranted}" />
+                        </Grid>
+                        <TextBlock Classes="hint"
+                                   Text="After enabling Screen Recording in System Settings, quit and reopen BetterGI. Window titles are only visible once it is granted." />
+                    </StackPanel>
+                </Border>
+
+                <Border Classes="card">
+                    <StackPanel Spacing="6">
+                        <Grid ColumnDefinitions="*,Auto">
+                            <TextBlock Classes="h" Text="2 · Game window" VerticalAlignment="Center" />
+                            <Button Grid.Column="1" Content="Refresh" Command="{Binding RefreshWindowsCommand}" />
+                        </Grid>
+                        <TextBlock Classes="hint"
+                                   Text="Under Yaagl the game runs inside Wine, so pick its window here. Windows that look like the game are listed first and marked ★." />
+                        <ListBox ItemsSource="{Binding Windows}" SelectedItem="{Binding SelectedWindow}" Height="230">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate x:DataType="platform:MacWindowInfo">
+                                    <Grid ColumnDefinitions="18,*">
+                                        <TextBlock Text="★" IsVisible="{Binding LooksLikeGame}" VerticalAlignment="Center" />
+                                        <StackPanel Grid.Column="1">
+                                            <TextBlock Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis" />
+                                            <TextBlock Classes="hint" Text="{Binding Details}" />
+                                        </StackPanel>
+                                    </Grid>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                        <CheckBox Content="Also list windows that are hidden or on other Spaces"
+                                  IsChecked="{Binding IncludeOffScreen}" />
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <TextBlock Text="Title bar:" VerticalAlignment="Center" />
+                            <ComboBox SelectedIndex="{Binding TitleBarMode}" Width="200">
+                                <ComboBoxItem Content="Detect automatically" />
+                                <ComboBoxItem Content="None (borderless)" />
+                                <ComboBoxItem Content="Custom height" />
+                            </ComboBox>
+                            <NumericUpDown Value="{Binding CustomTitleBarPoints}" Minimum="0" Maximum="200" Increment="1"
+                                           FormatString="0" Width="110" IsVisible="{Binding IsCustomTitleBar}" />
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,4,0,0">
+                            <Button Content="Start capture" Classes="accent" Command="{Binding StartCaptureCommand}" />
+                            <Button Content="Stop" Command="{Binding StopCaptureCommand}" />
+                            <Button Content="Bring game to front" Command="{Binding ActivateGameCommand}" />
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <Border Classes="card">
+                    <StackPanel Spacing="6">
+                        <TextBlock Classes="h" Text="3 · Input test" />
+                        <TextBlock Classes="hint"
+                                   Text="Each test brings the game to the front first. Stand in the open world before running them." />
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Button Content="Press M (open map)" Command="{Binding TestKeyCommand}" />
+                            <Button Content="Turn camera" Command="{Binding TestMouseCommand}" />
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <Border Classes="card">
+                    <StackPanel Spacing="6">
+                        <TextBlock Classes="h" Text="4 · Pause" />
+                        <ToggleSwitch Content="Pause triggers" IsChecked="{Binding Paused}" />
+                        <TextBlock Classes="hint"
+                                   Text="⌥ Option + P pauses / resumes from inside the game. Triggers and tasks only act while the game window is in front." />
+                    </StackPanel>
+                </Border>
+
+            </StackPanel>
+        </ScrollViewer>
+
+        <Border Grid.Column="1" Background="#111" CornerRadius="8" ClipToBounds="True">
+            <Panel>
+                <Image Source="{Binding Preview}" Stretch="Uniform" IsVisible="{Binding IsCapturing}" />
+                <TextBlock Text="Capture preview" Foreground="#777" HorizontalAlignment="Center"
+                           VerticalAlignment="Center" IsVisible="{Binding NoPreview}" />
+            </Panel>
+        </Border>
+    </Grid>
+</UserControl>

@@ -1,0 +1,58 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="using:BetterGI.Mac"
+        x:Class="BetterGI.Mac.MainWindow"
+        x:DataType="local:MainViewModel"
+        Title="BetterGI for Mac"
+        Icon="avares://BetterGI/Assets/AppIcon.png"
+        Width="1240" Height="820" MinWidth="980" MinHeight="620">
+
+    <Window.Styles>
+        <Style Selector="TextBlock.h">
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="FontSize" Value="14" />
+            <Setter Property="Margin" Value="0,0,0,6" />
+        </Style>
+        <Style Selector="TextBlock.hint">
+            <Setter Property="Opacity" Value="0.65" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+        </Style>
+        <Style Selector="Border.card">
+            <Setter Property="Padding" Value="12" />
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="BorderBrush" Value="{DynamicResource SystemControlForegroundBaseLowBrush}" />
+            <Setter Property="Margin" Value="0,0,0,10" />
+        </Style>
+    </Window.Styles>
+
+    <Grid ColumnDefinitions="176,*" RowDefinitions="*,Auto,150" Margin="12">
+        <ListBox x:Name="Nav" Grid.RowSpan="3" Margin="0,0,12,0" SelectedIndex="0">
+            <ListBoxItem Content="启动 · Home" />
+            <ListBoxItem Content="实时触发 · Triggers" />
+            <ListBoxItem Content="独立任务 · Tasks" />
+            <ListBoxItem Content="JS 脚本 · Scripts" />
+            <ListBoxItem Content="地图追踪 · Pathing" />
+            <ListBoxItem Content="键鼠录制 · Macros" />
+            <ListBoxItem Content="调度器 · Scheduler" />
+            <ListBoxItem Content="设置 · Settings" />
+        </ListBox>
+
+        <ContentControl x:Name="PageHost" Grid.Column="1" />
+
+        <Grid Grid.Column="1" Grid.Row="1" ColumnDefinitions="*,Auto" Margin="2,8">
+            <TextBlock Text="{Binding StatusText}" TextWrapping="Wrap" VerticalAlignment="Center" />
+            <Button Grid.Column="1" Content="停止任务 Stop task" Command="{Binding StopTasksCommand}" />
+        </Grid>
+
+        <ListBox Grid.Column="1" Grid.Row="2" x:Name="LogList" ItemsSource="{Binding LogLines}" FontFamily="Menlo,monospace" FontSize="11">
+            <ListBox.Styles>
+                <Style Selector="ListBoxItem">
+                    <Setter Property="Padding" Value="6,1" />
+                    <Setter Property="MinHeight" Value="0" />
+                </Style>
+            </ListBox.Styles>
+        </ListBox>
+    </Grid>
+</Window>
