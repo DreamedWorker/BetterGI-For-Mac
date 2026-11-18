@@ -64,6 +64,7 @@ public partial class MainWindow : Window
         }
 
         var index = Math.Max(0, Nav.SelectedIndex);
+        viewModel.PreviewVisible = index == 0;
         if (!_pages.TryGetValue(index, out var page))
         {
             if (index != 0 && !viewModel.CoreReady)

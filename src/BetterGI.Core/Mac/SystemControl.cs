@@ -59,12 +59,33 @@ public static class SystemControl
 
     public static nint GetForegroundWindowHandle() => (nint)MacWindows.Frontmost().WindowId;
 
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<int, string> ProcessNames = new();
+
+    /// <summary>Name of the process owning the front-most window. Every task wait asks this, so names are cached per pid.</summary>
     public static string? GetActiveProcessName()
     {
+        var pid = MacWindows.Frontmost().ProcessId;
+        if (pid == 0)
+        {
+            return null;
+        }
+
+        if (ProcessNames.TryGetValue(pid, out var name))
+        {
+            return name;
+        }
+
         try
         {
-            var pid = MacWindows.Frontmost().ProcessId;
-            return pid == 0 ? null : Process.GetProcessById(pid).ProcessName;
+            using var process = Process.GetProcessById(pid);
+            name = process.ProcessName;
+            if (ProcessNames.Count > 256)
+            {
+                ProcessNames.Clear();
+            }
+
+            ProcessNames[pid] = name;
+            return name;
         }
         catch
         {

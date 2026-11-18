@@ -28,6 +28,13 @@ internal static class SelfTest
             Console.WriteLine($"  {(window.LooksLikeGame ? "*" : " ")} {window.Id,6}  {window.DisplayName}  [{window.Details}]  title bar {bar:0}pt");
         }
 
+        // The front-most window as the capture loop sees it must agree with a direct query.
+        var (frontId, frontPid) = MacWindows.Frontmost();
+        var (nativeFront, nativePid) = MacWindows.FrontmostUncached();
+        var frontOk = frontId == nativeFront && frontPid == nativePid && frontId != 0 && MacWindows.IsFrontmost(frontId);
+        Console.WriteLine($"\nForeground detection: front window {frontId} (pid {frontPid}) -> {(frontOk ? "ok" : $"FAIL (direct query: {nativeFront}, pid {nativePid})")}");
+        failures += frontOk ? 0 : 1;
+
         var windowArg = ValueOf(args, "--window");
         if (windowArg != null)
         {

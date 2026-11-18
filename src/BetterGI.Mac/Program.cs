@@ -15,6 +15,10 @@ internal static partial class Program
         {
             code = SelfTest.Run(args);
         }
+        else if (args.Contains("--perftest"))
+        {
+            code = PerfTest.Run(args);
+        }
         else if (args.Contains("--coretest"))
         {
             code = CoreSelfTest.Run(args);

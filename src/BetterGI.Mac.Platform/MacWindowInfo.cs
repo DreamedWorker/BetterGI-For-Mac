@@ -76,32 +76,111 @@ public static class MacWindows
         return windows.OrderByDescending(w => w.LooksLikeGame).ToList();
     }
 
-    /// <summary>Re-reads the geometry of a window; null when it no longer exists.</summary>
+    // The capture loop asks about the game window several times per tick and every running task asks
+    // again before each wait; each answer is a round trip to the window server. Answers are reused for
+    // a short time instead (well below one capture interval), which removes ~90% of those calls.
+    private static readonly long CacheTicks = System.Diagnostics.Stopwatch.Frequency * 40 / 1000;
+    private static readonly object CacheLock = new();
+    private static readonly Dictionary<uint, (long Stamp, MacWindowInfo? Info)> QueryCache = [];
+    // Stamp 0 means "no answer yet". (Not long.MinValue: now - long.MinValue overflows to a negative
+    // number, which made the empty initial answer look fresh forever.)
+    private static (long Stamp, uint WindowId, int ProcessId) _frontmost;
+
+    private static bool IsFresh(long stamp, long now) => stamp != 0 && now >= stamp && now - stamp < CacheTicks;
+
+    /// <summary>Re-reads the geometry of a window (at most 40 ms old); null when it no longer exists.</summary>
     public static MacWindowInfo? Query(MacWindowInfo known)
     {
-        if (MacNative.bgi_window_info(known.Id, out var x, out var y, out var width, out var height, out var scale,
-                out var pid, out var onScreen) == 0)
+        var now = System.Diagnostics.Stopwatch.GetTimestamp();
+        MacWindowInfo? fresh;
+        lock (CacheLock)
         {
-            return null;
+            if (QueryCache.TryGetValue(known.Id, out var cached) && IsFresh(cached.Stamp, now))
+            {
+                return cached.Info is null ? null : known with
+                {
+                    X = cached.Info.X, Y = cached.Info.Y, Width = cached.Info.Width, Height = cached.Info.Height,
+                    Scale = cached.Info.Scale, ProcessId = cached.Info.ProcessId, OnScreen = cached.Info.OnScreen,
+                };
+            }
         }
 
-        return known with { X = x, Y = y, Width = width, Height = height, Scale = scale, ProcessId = pid, OnScreen = onScreen != 0 };
+        fresh = MacNative.bgi_window_info(known.Id, out var x, out var y, out var width, out var height, out var scale,
+            out var pid, out var onScreen) == 0
+            ? null
+            : known with { X = x, Y = y, Width = width, Height = height, Scale = scale, ProcessId = pid, OnScreen = onScreen != 0 };
+        lock (CacheLock)
+        {
+            if (QueryCache.Count > 64)
+            {
+                QueryCache.Clear();
+            }
+
+            QueryCache[known.Id] = (now, fresh);
+        }
+
+        return fresh;
     }
 
-    public static bool IsFrontmost(uint windowId) => MacNative.bgi_window_is_frontmost(windowId) != 0;
+    /// <summary>True when the process owning the window owns the front-most normal window (at most 40 ms old).</summary>
+    public static bool IsFrontmost(uint windowId)
+    {
+        var target = Query(new MacWindowInfo { Id = windowId });
+        return target is { OnScreen: true } && target.ProcessId == Frontmost().ProcessId;
+    }
 
-    public static bool Activate(uint windowId) => MacNative.bgi_window_activate(windowId) != 0;
-
-    /// <summary>Window number and owning process of the front-most normal window; (0, 0) when none.</summary>
-    public static (uint WindowId, int ProcessId) Frontmost()
+    /// <summary>The front-most window asked directly, without the cache (for checks).</summary>
+    public static (uint WindowId, int ProcessId) FrontmostUncached()
     {
         var id = MacNative.bgi_frontmost_window(out var pid);
         return (id, pid);
     }
 
+    /// <summary>Forgets cached answers; called after anything that changes window order or state.</summary>
+    public static void InvalidateCache()
+    {
+        lock (CacheLock)
+        {
+            QueryCache.Clear();
+            _frontmost = default;
+        }
+    }
+
+    public static bool Activate(uint windowId)
+    {
+        var result = MacNative.bgi_window_activate(windowId) != 0;
+        InvalidateCache();
+        return result;
+    }
+
+    /// <summary>Window number and owning process of the front-most normal window; (0, 0) when none.</summary>
+    public static (uint WindowId, int ProcessId) Frontmost()
+    {
+        var now = System.Diagnostics.Stopwatch.GetTimestamp();
+        lock (CacheLock)
+        {
+            if (IsFresh(_frontmost.Stamp, now))
+            {
+                return (_frontmost.WindowId, _frontmost.ProcessId);
+            }
+        }
+
+        var id = MacNative.bgi_frontmost_window(out var pid);
+        lock (CacheLock)
+        {
+            _frontmost = (now, id, pid);
+        }
+
+        return (id, pid);
+    }
+
     /// <summary>Minimises or restores a window (needs the Accessibility permission).</summary>
-    public static bool SetMinimized(uint windowId, bool minimized) =>
-        MacNative.bgi_window_set_minimized(windowId, minimized ? 1 : 0) != 0;
+    public static bool SetMinimized(uint windowId, bool minimized)
+    {
+        var result = MacNative.bgi_window_set_minimized(windowId, minimized ? 1 : 0) != 0;
+        InvalidateCache();
+        return result;
+    }
 
     /// <summary>
     /// Guesses the title bar height (points) of a window: a windowed Wine game is the game picture plus a

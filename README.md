@@ -15,6 +15,11 @@ Upstream's non-UI C# code (tasks, recognition, triggers, scripting) is compiled 
 - **Win32 compatibility layer** (`native/BgiMacNative/Win32Compat.swift`): the few dozen `user32` / `gdi32` /
   `kernel32` functions upstream still calls are redirected to macOS implementations.
 
+Performance adjustments are applied the same way: upstream's `Cv2.MatchTemplate` calls go to a parallel
+version (`src/BetterGI.Core/Mac/FastMatch.cs`; OpenCV's own runs on one core on Apple Silicon), the forced GC every
+2 s in the capture loop is dropped, and the auto-enter-game trigger only runs its full-screen OCR when the popup
+button is present. `BetterGI --perftest` measures the capture loop (stalls, GC, CPU) without sending input.
+
 A few members and whole files are copied from upstream with documented patches by
 `scripts/extract-upstream-members.py` into `src/BetterGI.Core/Mac/Generated/`; the same script generates the
 service registration and the settings descriptions. Re-run it after updating `upstream/`.

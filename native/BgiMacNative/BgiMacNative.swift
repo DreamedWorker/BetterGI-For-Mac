@@ -149,8 +149,17 @@ public func bgi_window_info(_ windowId: UInt32,
                             _ scale: UnsafeMutablePointer<Double>?,
                             _ pid: UnsafeMutablePointer<Int32>?,
                             _ onScreen: UnsafeMutablePointer<Int32>?) -> Int32 {
-    guard let list = CGWindowListCopyWindowInfo([.optionIncludingWindow], windowId) as? [[String: Any]],
-          let entry = list.first,
+    // The window-list query only returns windows that are on screen; a minimised window, or one on
+    // another Space, is looked up by its number instead so it is not mistaken for a closed one.
+    var list = CGWindowListCopyWindowInfo([.optionIncludingWindow], windowId) as? [[String: Any]] ?? []
+    if list.isEmpty {
+        var ids: [UnsafeRawPointer?] = [UnsafeRawPointer(bitPattern: UInt(windowId))]
+        if let array = CFArrayCreate(nil, &ids, 1, nil),
+           let described = CGWindowListCreateDescriptionFromArray(array) as? [[String: Any]] {
+            list = described
+        }
+    }
+    guard let entry = list.first,
           let boundsDict = entry[kCGWindowBounds as String] as? NSDictionary,
           let bounds = CGRect(dictionaryRepresentation: boundsDict as CFDictionary) else {
         return 0

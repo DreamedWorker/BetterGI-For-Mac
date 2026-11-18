@@ -1,5 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <Import Project="Exclude.props" />
+  <Import Project="Mac/Generated/MatchTemplatePatches.props" />
   <!-- Upstream's non-UI code compiled unchanged for plain net10.0. Files that are Windows-only by nature are listed in
        Exclude.props; WPF / WinForms types the remaining code mentions are provided by Shims/. Work in progress. -->
   <PropertyGroup>

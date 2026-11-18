@@ -27,6 +27,6 @@
     <!-- Win32 specifics with a macOS replacement in Mac/ or none yet -->
     <UpstreamExclude Include="$(U)Helpers/DeviceIdHelper.cs;$(U)Helpers/DpiHelper.cs;$(U)GameTask/UseRedeemCode/RedeemCodeManager.cs;$(U)GameTask/AutoPathing/PathRecorder.cs" />
     <!-- Replaced by a patched copy in Mac/Generated (see scripts/extract-upstream-members.py) -->
-    <UpstreamExclude Include="$(U)Core/Config/Global.cs;$(U)Service/Instance/InstanceContext.cs;$(U)Service/Instance/InstanceBootstrap.cs" />
+    <UpstreamExclude Include="$(U)Core/Config/Global.cs;$(U)Service/Instance/InstanceContext.cs;$(U)Service/Instance/InstanceBootstrap.cs;$(U)GameTask/TaskTriggerDispatcher.cs;$(U)GameTask/GameLoading/GameLoading.cs" />
   </ItemGroup>
 </Project>

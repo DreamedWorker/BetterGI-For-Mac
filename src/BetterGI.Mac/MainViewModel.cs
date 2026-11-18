@@ -328,9 +328,19 @@ public partial class MainViewModel : ObservableObject, IDisposable
         return id;
     }
 
+    private int _statusTicks;
+
+    /// <summary>When false (another page is shown) no preview frames are produced at all.</summary>
+    public volatile bool PreviewVisible = true;
+
     private void OnStatusTick()
     {
-        RefreshPermissions();
+        // permission checks query the privacy database; once granted they rarely change
+        if (++_statusTicks % 5 == 0 || !ScreenCaptureGranted || !AccessibilityGranted)
+        {
+            RefreshPermissions();
+        }
+
         var frames = Interlocked.Exchange(ref _framesThisSecond, 0);
         if (!CoreReady || !IsCapturing || _core.Runtime.Current is not { } runtime)
         {
@@ -360,7 +370,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
     {
         Interlocked.Increment(ref _framesThisSecond);
         var now = _clock.ElapsedMilliseconds;
-        if (now - Interlocked.Read(ref _lastPreviewAt) < PreviewIntervalMs || Interlocked.Exchange(ref _previewPending, 1) == 1)
+        if (!PreviewVisible || now - Interlocked.Read(ref _lastPreviewAt) < PreviewIntervalMs
+                            || Interlocked.Exchange(ref _previewPending, 1) == 1)
         {
             return;
         }
@@ -381,7 +392,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         {
             try
             {
-                Preview = ToBitmap(bgra);
+                Preview = NextBitmap(bgra);
             }
             finally
             {
@@ -391,41 +402,55 @@ public partial class MainViewModel : ObservableObject, IDisposable
         }, DispatcherPriority.Background);
     }
 
+    /// <summary>
+    /// Runs on the capture thread, so it must be cheap: a linear downscale straight into BGRA
+    /// (an area filter on a 1440p frame costs several times more and the preview does not need it).
+    /// </summary>
     private static Mat MakePreview(Mat frame)
     {
-        using var small = new Mat();
-        if (frame.Width > PreviewMaxWidth)
-        {
-            var scale = (double)PreviewMaxWidth / frame.Width;
-            Cv2.Resize(frame, small, new OpenCvSharp.Size(PreviewMaxWidth, (int)Math.Round(frame.Height * scale)), 0, 0,
-                InterpolationFlags.Area);
-        }
-        else
-        {
-            frame.CopyTo(small);
-        }
-
+        var width = Math.Min(PreviewMaxWidth, frame.Width);
+        var height = (int)Math.Round(frame.Height * (double)width / frame.Width);
+        var small = new Mat();
+        Cv2.Resize(frame, small, new OpenCvSharp.Size(width, height), 0, 0, InterpolationFlags.Linear);
         if (small.Channels() == 4)
         {
-            return small.Clone();
+            return small;
         }
 
-        var bgra = new Mat();
-        Cv2.CvtColor(small, bgra, ColorConversionCodes.BGR2BGRA);
-        return bgra;
+        using (small)
+        {
+            var bgra = new Mat();
+            Cv2.CvtColor(small, bgra, ColorConversionCodes.BGR2BGRA);
+            return bgra;
+        }
     }
 
-    private static unsafe WriteableBitmap ToBitmap(Mat bgra)
+    // Two bitmaps used in turn: the one on screen is never written, and no bitmap is allocated per frame
+    // (allocating ten 2 MB bitmaps a second left the GC to clean up after them in bursts).
+    private readonly WriteableBitmap?[] _previewBitmaps = new WriteableBitmap?[2];
+    private int _previewIndex;
+
+    private unsafe WriteableBitmap NextBitmap(Mat bgra)
     {
-        var bitmap = new WriteableBitmap(new PixelSize(bgra.Width, bgra.Height), new Vector(96, 96),
-            PixelFormat.Bgra8888, AlphaFormat.Opaque);
-        using var buffer = bitmap.Lock();
-        var rowBytes = bgra.Width * 4;
-        var sourceStep = (long)bgra.Step();
-        for (var y = 0; y < bgra.Height; y++)
+        _previewIndex ^= 1;
+        var bitmap = _previewBitmaps[_previewIndex];
+        if (bitmap is null || bitmap.PixelSize.Width != bgra.Width || bitmap.PixelSize.Height != bgra.Height)
         {
-            Buffer.MemoryCopy((byte*)bgra.Data + y * sourceStep, (byte*)buffer.Address + (long)y * buffer.RowBytes,
-                buffer.RowBytes, rowBytes);
+            bitmap?.Dispose();
+            bitmap = new WriteableBitmap(new PixelSize(bgra.Width, bgra.Height), new Vector(96, 96),
+                PixelFormat.Bgra8888, AlphaFormat.Opaque);
+            _previewBitmaps[_previewIndex] = bitmap;
+        }
+
+        using (var buffer = bitmap.Lock())
+        {
+            var rowBytes = bgra.Width * 4;
+            var sourceStep = (long)bgra.Step();
+            for (var y = 0; y < bgra.Height; y++)
+            {
+                Buffer.MemoryCopy((byte*)bgra.Data + y * sourceStep, (byte*)buffer.Address + (long)y * buffer.RowBytes,
+                    buffer.RowBytes, rowBytes);
+            }
         }
 
         return bitmap;

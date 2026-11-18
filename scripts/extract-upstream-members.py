@@ -131,6 +131,55 @@ PATCHED = [
     ]),
 ]
 
+PATCHED += [
+    # Upstream forces a full blocking GC every 2 s inside the capture tick, holding the dispatcher lock.
+    # With the whole app in one heap on macOS this stalls capture and every running task for ~250 ms each
+    # time. OpenCvSharp reports Mat memory to the GC (AddMemoryPressure), so the runtime already collects
+    # when native image memory grows; the forced collection is dropped.
+    ("GameTask/TaskTriggerDispatcher.cs", [
+        ("""                if ((DateTime.Now - _prevManualGc).TotalSeconds > 2)
+                {
+                    GC.Collect();
+                    _prevManualGc = DateTime.Now;
+                }""",
+         """                // macOS port: periodic GC.Collect() removed (see scripts/extract-upstream-members.py)"""),
+    ]),
+]
+
+PATCHED += [
+    # The "auto enter game" trigger OCRs the whole screen every 2 s for 5 minutes after capture starts, to
+    # catch the age-rating popup. On the CPU that OCR takes ~250 ms and stalls the capture loop each time.
+    # The popup is only clicked when its white confirm button is found as well, so the (cheap) button
+    # template match now runs first and the OCR only when the button is on screen. Same behaviour.
+    ("GameTask/GameLoading/GameLoading.cs", [
+        ("""            _latestLoadingOcrRegions = content.CaptureRectArea.FindMulti(RecognitionObject.OcrThis);
+            if (_latestLoadingOcrRegions.Any(region =>
+                    region.Text.Contains("适龄") || region.Text.Contains("监护")))
+            {
+                // 适龄提示窗口自动关闭
+                var agePopup = content.CaptureRectArea.Find(ElementRecognition.Get("BtnWhiteConfirm", content.CaptureRectArea));
+                if (!agePopup.IsEmpty())
+                {
+                    agePopup.Click();
+                    _logger.LogInformation("检测到适龄提示，自动点击确认");
+                }
+            }""",
+         """            // macOS port: button first, full-screen OCR only when it is present (see scripts/extract-upstream-members.py)
+            var agePopup = content.CaptureRectArea.Find(ElementRecognition.Get("BtnWhiteConfirm", content.CaptureRectArea));
+            if (!agePopup.IsEmpty())
+            {
+                _latestLoadingOcrRegions = content.CaptureRectArea.FindMulti(RecognitionObject.OcrThis);
+                if (_latestLoadingOcrRegions.Any(region =>
+                        region.Text.Contains("适龄") || region.Text.Contains("监护")))
+                {
+                    // 适龄提示窗口自动关闭
+                    agePopup.Click();
+                    _logger.LogInformation("检测到适龄提示，自动点击确认");
+                }
+            }"""),
+    ]),
+]
+
 # Statements of upstream's service registration (App.xaml.cs) that mention any of these are left out:
 # WPF views / view models / windows and Windows-only services. Everything else is registered unchanged.
 REGISTRATION_SKIP = re.compile("|".join([
@@ -235,8 +284,59 @@ def generate_config_docs():
     print(f"config docs: {sum(len(v) for v in docs.values())} properties in {len(docs)} classes")
 
 
+def excluded_patterns():
+    """Upstream paths left out of the build (Exclude.props), as regular expressions."""
+    with open(os.path.join(ROOT, "src", "BetterGI.Core", "Exclude.props"), encoding="utf-8") as handle:
+        text = handle.read()
+    patterns = []
+    for include in re.findall(r'<UpstreamExclude Include="([^"]+)"', text):
+        for item in include.split(";"):
+            item = item.strip().replace("$(U)", "")
+            if item:
+                patterns.append(re.compile("^" + re.escape(item).replace(r"\*\*", ".*").replace(r"\*", "[^/]*") + "$"))
+    return patterns
+
+
+def generate_match_template_patches():
+    """Routes every upstream Cv2.MatchTemplate call to BetterGenshinImpact.Mac.FastMatch (parallel; OpenCV's
+    own is single-threaded on Apple Silicon). Writes patched copies and the list of originals to exclude."""
+    skip = excluded_patterns()
+    already = {path for path, _ in PATCHED}
+    rewritten = []
+    for folder, dirs, files in os.walk(UP):
+        rel_folder = os.path.relpath(folder, UP).replace(os.sep, "/")
+        if rel_folder.split("/")[0] in ("View", "ViewModel", "Markup", "Wine", "obj", "bin"):
+            dirs[:] = []
+            continue
+        for name in files:
+            if not name.endswith(".cs"):
+                continue
+            rel = (name if rel_folder == "." else rel_folder + "/" + name)
+            if rel in already or any(p.match(rel) for p in skip):
+                continue
+            with open(os.path.join(folder, name), encoding="utf-8-sig") as handle:
+                text = handle.read()
+            if "Cv2.MatchTemplate(" not in text:
+                continue
+            text = text.replace("Cv2.MatchTemplate(", "BetterGenshinImpact.Mac.FastMatch.MatchTemplate(")
+            target = "MT_" + rel.replace("/", "_").replace(".cs", ".g.cs")
+            header = f"// <auto-generated> Copy of upstream {rel} with Cv2.MatchTemplate routed to FastMatch by scripts/extract-upstream-members.py. Do not edit. </auto-generated>\n"
+            with open(os.path.join(OUT, target), "w", encoding="utf-8") as handle:
+                handle.write(header + text)
+            rewritten.append(rel)
+    props = ["<Project>", "  <!-- Generated by scripts/extract-upstream-members.py: originals replaced by MT_*.g.cs copies. -->", "  <ItemGroup>"]
+    props += [f'    <UpstreamExclude Include="$(U){rel}" />' for rel in sorted(rewritten)]
+    props += ["  </ItemGroup>", "</Project>", ""]
+    with open(os.path.join(OUT, "MatchTemplatePatches.props"), "w", encoding="utf-8") as handle:
+        handle.write("\n".join(props))
+    print(f"MatchTemplate routed to FastMatch in {len(rewritten)} files")
+
+
 def main():
     os.makedirs(OUT, exist_ok=True)
+    for stale in os.listdir(OUT):
+        if stale.startswith("MT_"):
+            os.remove(os.path.join(OUT, stale))
     generate_config_docs()
     for path, patches in PATCHED:
         with open(os.path.join(UP, path), encoding="utf-8-sig") as handle:
@@ -251,6 +351,7 @@ def main():
             handle.write(header + text)
         print(f"{name}: patched copy")
     generate_registration()
+    generate_match_template_patches()
     for path, declaration, patterns in SPECS:
         with open(os.path.join(UP, path), encoding="utf-8-sig") as handle:
             lines = handle.read().splitlines()
