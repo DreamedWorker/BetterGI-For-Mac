@@ -3,7 +3,7 @@
     <OutputType>Exe</OutputType>
     <RootNamespace>BetterGI.Mac</RootNamespace>
     <AssemblyName>BetterGI</AssemblyName>
-    <Version>0.1.0</Version>
+    <Version>0.1.1</Version>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <NoWarn>$(NoWarn);NU1701;NU1903;NU1902</NoWarn>
