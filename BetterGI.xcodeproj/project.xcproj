@@ -20,6 +20,9 @@
     {
       "kind": "folder",
       "path": "BetterGI",
+      "opaque-folders": [
+        "Resources",
+      ],
       "target-membership": [
         "BetterGI",
       ],

@@ -10,6 +10,9 @@ xcuserdata/
 **/obj/
 *.log
 /native/BgiMacNative/build/
+/.build/
+/.tmp/
+/.home/
 
 .vs/
 .idea/

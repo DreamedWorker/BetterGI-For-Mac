@@ -8,7 +8,7 @@
 import Foundation
 import ScreenCaptureKit
 
-class ScreenCaptureManager: NSObject {
+nonisolated class ScreenCaptureManager: NSObject {
     private let window: SCWindow
     private let configuration: Configuration
     private let outputQueue = DispatchQueue(
@@ -181,7 +181,7 @@ class ScreenCaptureManager: NSObject {
 }
 
 extension ScreenCaptureManager: SCStreamOutput {
-    func stream(
+    nonisolated func stream(
         _ stream: SCStream,
         didOutputSampleBuffer sampleBuffer: CMSampleBuffer,
         of type: SCStreamOutputType
@@ -204,7 +204,7 @@ extension ScreenCaptureManager: SCStreamOutput {
 }
 
 extension ScreenCaptureManager: SCStreamDelegate {
-    func stream(_ stream: SCStream, didStopWithError error: any Error) {
+    nonisolated func stream(_ stream: SCStream, didStopWithError error: any Error) {
         lock.lock()
         if self.stream == stream {
             self.stream = nil
@@ -215,7 +215,7 @@ extension ScreenCaptureManager: SCStreamDelegate {
 }
 
 extension ScreenCaptureManager {
-    struct Configuration: Sendable {
+    nonisolated struct Configuration: Sendable {
         /// 目标帧率
         var framesPerSecond: Int = 20
         
