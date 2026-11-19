@@ -1,4 +1,9 @@
+### Mac OS 和 Xcode ###
 .DS_Store
+/BetterGI.xcodeproj/xcuserdata/
+/BetterGI.xcodeproj/project.xcworkspace/xcuserdata/
+xcuserdata/
+*.xcuserstate
 
 /dist/
 **/bin/
