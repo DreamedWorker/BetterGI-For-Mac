@@ -25,8 +25,30 @@ final class StartupViewModel {
     private(set) var processingDuration: TimeInterval = 0
     private(set) var droppedFrames: Int = 0
 
-    /// 游戏画面在采集画面中的位置（像素）
-    private(set) var gameViewport: CGRect?
+    // MARK: - 自动拾取
+
+    var autoPickSettings: AutoPickSettings = AutoPickPreferences.settings {
+        didSet {
+            guard autoPickSettings != oldValue else { return }
+
+            AutoPickPreferences.settings = autoPickSettings
+            autoPickSettingsStore.update(autoPickSettings)
+
+            if autoPickSettings.isEnabled != oldValue.isEnabled {
+                autoPickLogReporter.reset(
+                    baselinePickCount: autoPickReport.current.pickCount
+                )
+                if autoPickSettings.isEnabled {
+                    log("已开启自动拾取", level: .info)
+                    if isRecording {
+                        warnIfInputUnavailable()
+                    }
+                } else {
+                    log("已关闭自动拾取", level: .info)
+                }
+            }
+        }
+    }
 
     @ObservationIgnored private var manager: ScreenCaptureManager?
     @ObservationIgnored private var pipeline: OpenCVFramePipeline?
@@ -50,6 +72,13 @@ final class StartupViewModel {
     @ObservationIgnored private var recordingStartedAt: TimeInterval = 0
     @ObservationIgnored private var hasWarnedMissingViewport = false
 
+    @ObservationIgnored private let autoPickSettingsStore = AutoPickSettingsStore(AutoPickPreferences.settings)
+    @ObservationIgnored private var autoPickReport = AutoPickReport()
+    @ObservationIgnored private let autoPickLogReporter = AutoPickLogReporter()
+    @ObservationIgnored private let frontmostMonitor = FrontmostAppMonitor()
+    @ObservationIgnored private var hasReportedInputUnavailable = false
+    @ObservationIgnored private var hasViewport = false
+
     // MARK: - 日志
 
     func log(_ message: String, level: LogEntry.Level = .info) {
@@ -69,6 +98,11 @@ final class StartupViewModel {
     func startRecording(window: SCWindow) async {
         guard !isRecording, !isBusy else { return }
 
+        guard let processID = window.owningApplication?.processID else {
+            log("无法确定「\(window.displayTitle)」所属的应用，不能作为操作目标", level: .error)
+            return
+        }
+
         operationToken += 1
         let token = operationToken
 
@@ -84,7 +118,17 @@ final class StartupViewModel {
             return
         }
 
-        let processor = GameFrameProcessor()
+        // 每次录制使用新的报告对象，避免上一轮尚未结束的帧写入新会话状态。
+        autoPickReport = AutoPickReport()
+        let target = GameWindowTarget(windowID: window.windowID, processID: processID)
+        let autoPickTask = AutoPickTask(
+            settingsStore: autoPickSettingsStore,
+            target: target,
+            focusMonitor: frontmostMonitor,
+            report: autoPickReport,
+            bundle: .main
+        )
+        let processor = GameFrameProcessor(consumers: [autoPickTask])
         let pipeline = OpenCVFramePipeline(processor: processor) { [weak self] result in
             self?.handleProcessingResult(result, token: token)
         }
@@ -123,8 +167,14 @@ final class StartupViewModel {
             recordingStartedAt = CACurrentMediaTime()
             isRecording = true
             isBusy = false
+            frontmostMonitor.start()
             log("录制已开始：\(window.displayTitle)", level: .success)
             log("处理管线已就绪，正在定位游戏画面区域", level: .info)
+
+            if autoPickSettings.isEnabled {
+                log("自动拾取已开启，将在识别到游戏画面后加载模板", level: .info)
+                warnIfInputUnavailable()
+            }
         } catch {
             guard token == operationToken else { return }
 
@@ -150,6 +200,7 @@ final class StartupViewModel {
         isRecording = false
         isBusy = true
         recordingWindowTitle = nil
+        frontmostMonitor.stop()
         stopMetrics()
 
         switch trigger {
@@ -204,6 +255,7 @@ final class StartupViewModel {
         pipeline = nil
         isBusy = false
         recordingWindowTitle = nil
+        frontmostMonitor.stop()
         stopMetrics()
         log("已取消进行中的录制启动", level: .warning)
     }
@@ -216,6 +268,7 @@ final class StartupViewModel {
         pipeline = nil
         isRecording = false
         isBusy = false
+        frontmostMonitor.stop()
         stopMetrics()
 
         let title = recordingWindowTitle ?? "当前窗口"
@@ -265,10 +318,11 @@ final class StartupViewModel {
         pendingAnalysis = nil
         lastMetricsUpdate = 0
         hasReportedProcessingError = false
-        gameViewport = nil
+        hasViewport = false
         loggedViewport = nil
         recordingStartedAt = 0
         hasWarnedMissingViewport = false
+        resetAutoPickState()
     }
 
     private func stopMetrics() {
@@ -284,8 +338,9 @@ final class StartupViewModel {
         pendingProcessingDuration = nil
         pendingAnalysis = nil
         lastMetricsUpdate = 0
-        gameViewport = nil
+        hasViewport = false
         loggedViewport = nil
+        resetAutoPickState()
     }
 
     private func handleCapturedFrame(accepted: Bool, token: Int) {
@@ -326,7 +381,7 @@ final class StartupViewModel {
         }
     }
 
-    /// 将耗时、丢帧等高频指标限制在 4 fps 更新。
+    /// 将耗时、丢帧、玩法结果等高频指标限制在 4 fps 更新，减少主线程刷新压力。
     private func publishMetricsIfNeeded(now: TimeInterval) {
         guard now - lastMetricsUpdate >= metricsUpdateInterval else { return }
         lastMetricsUpdate = now
@@ -364,18 +419,27 @@ final class StartupViewModel {
             updateViewport(analysis.viewport)
         }
 
+        if autoPickSettings.isEnabled, isRecording {
+            for event in autoPickLogReporter.drain(
+                autoPickReport.current,
+                isEnabled: true
+            ) {
+                log(event.message, level: event.level)
+            }
+        }
+
         if !hasWarnedMissingViewport,
            isRecording,
            recordingStartedAt > 0,
            now - recordingStartedAt > 3,
-           gameViewport == nil {
+           !hasViewport {
             hasWarnedMissingViewport = true
             log("还没有找到 16:9 的游戏画面，请确认窗口里显示的是游戏", level: .warning)
         }
     }
 
     private func updateViewport(_ viewport: CGRect?) {
-        gameViewport = viewport
+        hasViewport = viewport != nil
         guard let viewport else { return }
 
         let isNew = loggedViewport.map { previous in
@@ -391,6 +455,23 @@ final class StartupViewModel {
             "游戏画面区域：\(Int(viewport.width)) × \(Int(viewport.height))，"
                 + "位于 (\(Int(viewport.minX)), \(Int(viewport.minY)))",
             level: .info
+        )
+    }
+
+    // MARK: - 自动拾取
+
+    private func resetAutoPickState() {
+        autoPickReport.reset()
+        autoPickLogReporter.reset(baselinePickCount: 0)
+        hasReportedInputUnavailable = false
+    }
+
+    private func warnIfInputUnavailable() {
+        guard !hasReportedInputUnavailable, !KeySimulator.canPostEvents else { return }
+        hasReportedInputUnavailable = true
+        log(
+            "没有辅助功能权限，无法发送按键：请在「系统设置 › 隐私与安全性 › 辅助功能」中允许 BetterGI，然后重新打开 App",
+            level: .error
         )
     }
 }

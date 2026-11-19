@@ -30,7 +30,7 @@ struct MainStageView: View {
                 case .main:
                     StartupPanel(viewModel: windows, session: session)
                 case .realtimeTasks:
-                    Group {}
+                    RealtimeTasksPanel(session: session, onOpenStartup: { selectedFeature = .main })
                 }
             }
         )
