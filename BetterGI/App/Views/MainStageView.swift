@@ -10,6 +10,9 @@ import SwiftUI
 struct MainStageView: View {
     @State private var selectedFeature: AppFeature = .main
     
+    @State private var windows = SharedViewModel()
+    @State private var session = StartupViewModel()
+    
     @ViewBuilder
     var body: some View {
         NavigationSplitView(
@@ -25,13 +28,16 @@ struct MainStageView: View {
             detail: {
                 switch selectedFeature {
                 case .main:
-                    Group {}
+                    StartupPanel(viewModel: windows, session: session)
                 case .realtimeTasks:
                     Group {}
                 }
             }
         )
         .navigationTitle(selectedFeature.title)
+        .onDisappear {
+            session.handleDisappearance()
+        }
     }
 }
 

@@ -7,6 +7,15 @@
   "localizations": {
     "development": "zh-Hans",
   },
+  "packages": [
+    {
+      "kind": "remote",
+      "repository": "https://github.com/yeatse/opencv-spm.git",
+      "version": {
+        "version": "5.1.0",
+      },
+    },
+  ],
   "files": [
     {
       "kind": "folder",
@@ -40,6 +49,13 @@
         "compile-sources",
         "frameworks",
         "resources",
+      ],
+      "package-product-members": [
+        {
+          "package": "opencv-spm",
+          "product-name": "OpenCV-Core",
+          "build-phase": { "build-phase": "frameworks" },
+        },
       ],
       "build-settings": {
         "ASSETCATALOG_COMPILER_APPICON_NAME": "BetterGILogo",
